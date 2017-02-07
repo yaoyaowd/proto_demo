@@ -1,0 +1,25 @@
+// Generate gRPC code in GO:
+// protoc -I protos/ protos/superroot.proto --go_out=plugins=grpc:go/superroot
+
+syntax = "proto3";
+
+package superroot;
+
+message SearchRequest {
+    string query = 1;
+    int32 offset = 2;
+    int32 limit = 3;
+}
+
+message SearchDoc {
+    string id = 1;
+    float score = 2;
+}
+
+message SearchResponse {
+    repeated SearchDoc docs = 1;
+}
+
+service SuperRoot {
+    rpc Search (SearchRequest) returns (SearchResponse) {}
+}
