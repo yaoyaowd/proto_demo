@@ -8,7 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	//"sort"
+	"sort"
 	pb "./superroot"
 
 	"golang.org/x/net/context"
@@ -20,16 +20,14 @@ const (
 	port = ":8999"
 )
 
-var hosts = [5]string{
-	"10.10.32.23",
-	"10.10.32.89",
-	"10.10.32.185",
-	"10.10.32.42",
-	"10.10.32.165"}
+// Put your solr service here.
+var hosts = []string{}
 
 type Server struct{}
 
+// Search a single solr host.
 func search(host string, query string, offset int32, limit int32, ch chan<- []pb.SearchDoc) {
+	// This is for demo, use &url.URL{Path: request string} to avoid url encode / decode problems.
 	url_str := fmt.Sprintf("http://%s:8999/solr/wishsolrcluster/select?" +
 		"defType=edismax&qf=product_description%%20text&" +
 		"wt=json&start=%d&count=%d&docsAllowed=50000&omitHeader=true" +
@@ -43,6 +41,7 @@ func search(host string, query string, offset int32, limit int32, ch chan<- []pb
 	if err != nil {
 		ch <- make([]pb.SearchDoc, 0)
 	}
+	defer resp.Body.Close()
 
 	body, _ := ioutil.ReadAll(resp.Body)
 	var result interface{}
@@ -61,31 +60,22 @@ func search(host string, query string, offset int32, limit int32, ch chan<- []pb
 	ch <- ret
 }
 
-//type DocSorter struct {
-//	docs []*pb.SearchDoc
-//	by func(d1, d2 *pb.SearchDoc) bool
-//}
-//
-//func score_sort(d1, d2 *pb.SearchDoc) bool {
-//	return d1.Score > d2.Score
-//}
-//
-//func (s *DocSorter) Len() int {
-//	return len(s.docs)
-//}
-//
-//func (s *DocSorter) Swap(i, j int) {
-//	s.docs[i], s.docs[j] = s.docs[j], s.docs[i]
-//}
-//
-//func (s *DocSorter) Less(i, j int) bool {
-//	return s.by(s.docs[i], s.docs[j])
-//}
+// Helper structure to sort search document by score.
+type Docs []*pb.SearchDoc
+func (c Docs) Len() int {
+	return len(c)
+}
+func (c Docs) Swap(i, j int) {
+	c[i], c[j] = c[j], c[i]
+}
+func (c Docs) Less(i, j int) bool {
+	return c[i].Score > c[j].Score
+}
 
 func (s *Server) Search(ctx context.Context, in *pb.SearchRequest) (*pb.SearchResponse, error) {
 	ch := make(chan []pb.SearchDoc)
 	for _, host := range hosts {
-		go search(host, in.Query, in.Offset, in.Limit, ch)
+		go search(host, in.Query, 0, in.Offset+in.Limit, ch)
 	}
 
 	ret := []*pb.SearchDoc{}
@@ -95,13 +85,9 @@ func (s *Server) Search(ctx context.Context, in *pb.SearchRequest) (*pb.SearchRe
 			ret = append(ret, &doc)
 		}
 	}
+
+	sort.Sort(Docs(ret))
 	return &pb.SearchResponse{Docs: ret[in.Offset:in.Offset + in.Limit]}, nil
-	//ds := &DocSorter{
-	//	docs: ret,
-	//	by: score_sort,
-	//}
-	//sort.Sort(ds)
-	//return &pb.SearchResponse{Docs: ret[in.Offset:in.Offset + in.Limit]}, nil
 }
 
 func main() {
